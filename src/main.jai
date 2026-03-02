@@ -1,3 +1,9 @@
+/*
+
+I was about to start figuring out what's taking so long with direct lighting using our logging method or whatnot.
+
+*/
+
 #import "tbx/texture_packing";
 #import "tbx/model_loading";
 #import "tbx/geometry";
@@ -38,7 +44,7 @@ init :: (using ptr: *Packed_Texture_Rendering_2_Channel) {
 
 // register the baked lightmap as a packed texture so the renderer can sample it.
 // this assumes the lightmap png has already been written and then packed into the
-// packed texture system. Alternatively we coud upload it directly as an extra layer.
+// packed texture system. Alternatively we could upload it directly as an extra layer.
 register_lightmap :: (using ptr: *Packed_Texture_Rendering_2_Channel, lightmap_path: string) {
     lookup_table := build_packed_texture_lookup_table(*metadata);
     defer deinit(*lookup_table);
@@ -51,6 +57,24 @@ register_lightmap :: (using ptr: *Packed_Texture_Rendering_2_Channel, lightmap_p
 
 set_bake_scene :: (using ptr: *Packed_Texture_Rendering_2_Channel, scene: *Bake_Scene) {
     bake_scene = scene;
+}
+
+// remap a local [0,1] uv into the packed atlas sub-region, accounting for OpenGL vertical flip.
+// the new convention stores {u_min, v_min, width, height} in bounding boxes with v_min already
+// flipped in the base init, so we apply the same transform here on the CPU side.
+remap_uv_to_atlas :: (tc: Vector2, tex: Packed_Texture, side: int) -> Vector2 {
+    u_min  := cast(float) tex.top_left_x / cast(float) side;
+    v_min  := cast(float) tex.top_left_y / cast(float) side;
+    width  := cast(float) tex.w          / cast(float) side;
+    height := cast(float) tex.h          / cast(float) side;
+
+    // match the OpenGL flip that init applies to the bounding boxes
+    v_min = 1.0 - v_min - height;
+
+    // fmod to handle tiling, then shift into the sub-region
+    u := u_min + (tc.x - floor(tc.x)) * width;
+    v := v_min + (tc.y - floor(tc.y)) * height;
+    return .{u, v};
 }
 
 load_gltf_into_packed_texture_2_channel_renderables :: (
@@ -116,15 +140,13 @@ load_gltf_into_packed_texture_2_channel_renderables :: (
             base_color_lookup: Packed_Texture_Lookup;
             has_base_color := false;
 
-
             if prim.material_index >= 0 && prim.material_index < gltf.all_materials.count {
                 mat := *gltf.all_materials[prim.material_index];
                 tex_index := mat.pbr_metallic_roughness.base_color_texture.texture_index;
                 if tex_index >= 0 {
                     tex_path := resolve_gltf_image_path(gltf, tex_index);
                     if tex_path.count > 0 {
-
-                        // decode %20 to space so the path matches what's stored in metadata, in the future don't do this ad-hoc method instead just have a function to do this cleanly.
+                        // decode %20 to space so the path matches what's stored in metadata
                         decoded_path := replace(tex_path, "%20", " ");
                         base_color_lookup, has_base_color = find_packed_texture(*lookup_table, decoded_path);
                         if !has_base_color {
@@ -163,18 +185,15 @@ load_gltf_into_packed_texture_2_channel_renderables :: (
                 tc0_v1 := texcoords_0[i1];
                 tc0_v2 := texcoords_0[i2];
 
+                // remap base color UVs into the packed atlas sub-region.
+                // remap_uv_to_atlas now handles the OpenGL vertical flip internally,
+                // so we no longer need the separate tc.y = 1.0 - tc.y flip afterwards.
                 if has_base_color {
-                    slog("doing remapping");
                     base_tex := metadata.textures[base_color_lookup.metadata_index];
                     tc0_v0 = remap_uv_to_atlas(tc0_v0, base_tex, metadata.side_length_px);
                     tc0_v1 = remap_uv_to_atlas(tc0_v1, base_tex, metadata.side_length_px);
                     tc0_v2 = remap_uv_to_atlas(tc0_v2, base_tex, metadata.side_length_px);
                 }
-
-                // flip v for packed texture channel 0, I need to be sure as to why I have to do this...
-                tc0_v0.y = 1.0 - tc0_v0.y;
-                tc0_v1.y = 1.0 - tc0_v1.y;
-                tc0_v2.y = 1.0 - tc0_v2.y;
 
                 // compute lightmap uvs from the bake scene tile
                 lm_uv0 := Vector2.{0, 0};
@@ -281,11 +300,10 @@ compute_lightmap_uv :: (world_pos: Vector3, tile: *Triangle_Lightmap_Tile, atlas
     atlas_u := (cast(float) placement.top_left_x + px) / atlas_width;
     atlas_v := (cast(float) placement.top_left_y + py) / atlas_height;
 
-    // flip v for opengl (opengl expects 0 at bottom, image has 0 at top)
-    // atlas_v = 1.0 - atlas_v;
-
-    // for this one, idk why need to look into why.
-    // atlas_u = 1.0 - atlas_u;
+    // account for OpenGL vertical flip: the packed texture images are flipped
+    // on load (stbi_set_flip_vertically_on_load(1)), so the lightmap atlas
+    // coordinates need to be flipped to match.
+    atlas_v = 1.0 - atlas_v;
 
     return .{atlas_u, atlas_v};
 }
@@ -296,21 +314,7 @@ render :: (using packed_texture_rendering: *Packed_Texture_Rendering_2_Channel) 
 }
 
 
-// remap a local [0,1] uv into the packed atlas sub-region
-remap_uv_to_atlas :: (tc: Vector2, tex: Packed_Texture, side: int) -> Vector2 {
-    u_min  := cast(float) tex.top_left_x / cast(float) side;
-    v_min  := cast(float) tex.top_left_y / cast(float) side;
-    width  := cast(float) tex.w          / cast(float) side;
-    height := cast(float) tex.h          / cast(float) side;
-    // fmod to handle tiling, then shift into the sub-region
-    u := u_min + (tc.x - floor(tc.x)) * width;
-    v := v_min + (tc.y - floor(tc.y)) * height;
-    return .{u, v};
-}
-
-
 main :: () {
-    // ── Step 1: Pack textures (including the lightmap once it's baked) ──
     // We do a first pass of texture packing for the base color textures.
     // The lightmap will be added in a second pass after baking.
 
@@ -349,11 +353,11 @@ main :: () {
     write_lightmap_debug_ao("lightmap_ao.png", *bake_scene.atlas);
     write_lightmap_debug_normals("lightmap_normals.png", *bake_scene.atlas);
 
-
     print("=== BAKING COMPLETE ===\n\n");
 
     // This ensures the lightmap PNG is included in the packed texture atlas.
-    pack_textures(1024);
+    // force=true because we just wrote the lightmap and need it repacked.
+    pack_textures(1024, force = true);
 
     defer print("Program ended gracefully, if you stop seeing this then something bad happened.\n");
 

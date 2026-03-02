@@ -6,7 +6,7 @@ Packed_Textures_Metadata.{
             top_left_y = 0,
             w = 1024,
             h = 1024,
-            path = data/simple_cube/halo3.jpg,
+            path = "data/simple_cube/halo3.jpg",
             container_index = 0
         },
         Packed_Texture.{
@@ -14,7 +14,7 @@ Packed_Textures_Metadata.{
             top_left_y = 0,
             w = 1024,
             h = 1024,
-            path = data/lightmap_final.png,
+            path = "data/lightmap_final.png",
             container_index = 1
         },
         Packed_Texture.{
@@ -22,7 +22,7 @@ Packed_Textures_Metadata.{
             top_left_y = 0,
             w = 512,
             h = 512,
-            path = data/griffin_statue/Scene_-_Root_baseColor.jpg,
+            path = "data/griffin_statue/Scene_-_Root_baseColor.jpg",
             container_index = 2
         },
         Packed_Texture.{
@@ -30,7 +30,7 @@ Packed_Textures_Metadata.{
             top_left_y = 0,
             w = 124,
             h = 124,
-            path = data/shrine/pillar.png,
+            path = "data/shrine/pillar.png",
             container_index = 2
         },
         Packed_Texture.{
@@ -38,7 +38,7 @@ Packed_Textures_Metadata.{
             top_left_y = 0,
             w = 124,
             h = 124,
-            path = data/shrine/statue n grave.png,
+            path = "data/shrine/statue n grave.png",
             container_index = 2
         }
     ]
