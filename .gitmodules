@@ -4,3 +4,6 @@
 [submodule "data/shaders"]
 	path = data/shaders
 	url = git@github.com:jai-toolbox/shaders.git
+[submodule "src/external/xatlas"]
+	path = src/external/xatlas
+	url = git@github.com:Jai-Ports/xatlas.git

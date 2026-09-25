@@ -1,42 +1,24 @@
-OUTPUT_EXECUTABLE_NAME := "mwe_section_logging";
+OUTPUT_EXECUTABLE_NAME :: "light_baker";
+
+Build_Mode :: enum {
+    UNOPTIMIZED;
+    OPTIMIZED;
+}
 
 #run {
-
     set_build_options_dc(.{do_output = false});
 
     args := get_build_options().compile_time_command_line;
+    build_mode := get_requested_build_optimization_mode(args);
 
-    target_x64     := array_find(args, "-x64");
-    target_arm     := array_find(args, "-arm64");
+    make_directory_if_it_does_not_exist("bin", recursive = true);
 
-    cpu_target := CPU;
-    os_target  := OS;
-    if target_x64  cpu_target = .X64;
-    if target_arm  cpu_target = .ARM64;
-
-    target_triple_with_sdk: string;
-    lib_path: string;
-
-    log("Compiling for % %", os_target, cpu_target);
-
-    build_output_directory := "bin";
-    resources_output_directroy := "bin";
-
-    make_directory_if_it_does_not_exist(build_output_directory,     recursive = true);
-    make_directory_if_it_does_not_exist(resources_output_directroy, recursive = true);
-
-    w := compiler_create_workspace("Target workspace");
+    w := compiler_create_workspace("Target Program");
     options := get_build_options(w);
     copy_commonly_propagated_fields(get_build_options(), *options);
-    options.cpu_target = cpu_target;
-    options.os_target  = os_target;
     options.output_executable_name = OUTPUT_EXECUTABLE_NAME;
-    if target_arm {
-        options.backend = .LLVM;
-        options.llvm_options.target_system_features = "+lse";
-    }
-
-    options.output_path = tprint("%/", build_output_directory);
+    apply_build_optimization_options(*options, build_mode);
+    options.output_path = "bin/";
 
     import_path: [..] string;
     array_add(*import_path, ..options.import_path);
@@ -45,27 +27,32 @@ OUTPUT_EXECUTABLE_NAME := "mwe_section_logging";
 
     set_build_options(options, w);
 
-    compiler_begin_intercept(w);
     add_build_file("src/main.jai", w);
-    while true {
-        message := compiler_wait_for_message();
-        if message.kind == {
-            case .PHASE;
-                phase_message := cast(*Message_Phase) message;
-
-            case .ERROR;
-                exit(1);
-
-            case .COMPLETE;
-                break;
-        }
-    }
-    compiler_end_intercept(w);
-
 };
+
+get_requested_build_optimization_mode :: (args: [] string) -> Build_Mode {
+    if command_line_has_flag("-unoptimized") || command_line_has_flag("-debug") return .UNOPTIMIZED;
+    if command_line_has_flag("-optimized") || command_line_has_flag("-o") return .OPTIMIZED;
+
+    return .UNOPTIMIZED;
+}
+
+command_line_has_flag :: (flag: string) -> bool {
+    return array_find(get_toplevel_command_line(), flag);
+}
+
+apply_build_optimization_options :: (options: *Build_Options, mode: Build_Mode) {
+    if mode != .OPTIMIZED return;
+
+    set_optimization(options, .VERY_OPTIMIZED, preserve_debug_info = false);
+    options.stack_trace = false;
+    options.enable_frame_pointers = false;
+    options.backtrace_on_crash = .OFF;
+    options.array_bounds_check = .OFF;
+    options.cast_bounds_check = .OFF;
+    options.null_pointer_check = .OFF;
+}
 
 #import "Basic";
 #import "Compiler";
 #import "File";
-#import "File_Utilities";
-#import "String";
